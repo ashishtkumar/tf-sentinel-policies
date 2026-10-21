@@ -1,0 +1,43 @@
+import "tfplan/v2" as tfplan
+import "types"
+import "time"
+
+# Filter for aws_instance resources
+instances = filter tfplan.resource_changes as _, rc {
+  rc.type is "aws_instance" and
+  (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Helper function to check Name tag
+has_name_tag = func(change) {
+  return change is not null and
+         "tags" in keys(change) and
+         types.type_of(change["tags"]) is "map" and
+         change["tags"] contains "Name" and
+         length(change["tags"]["Name"]) > 0
+}
+
+# Ensure all filtered instances pass the check
+all_have_name_tag = all instances as _, inst {
+  has_name_tag(inst.change.after)
+}
+
+# Helper function to check allowed instance types
+allowed_instance_type = func(change) {
+  return change is not null and
+         "instance_type" in keys(change) and
+         (change["instance_type"] in ["Standard_B1s", "t2.micro"])
+}
+
+# Ensure all filtered instances use allowed types
+all_have_allowed_type = all instances as _, inst {
+  allowed_instance_type(inst.change.after)
+}
+
+# Check the day of week
+wd = time.now.weekday
+not_read_only_friday = wd != 6
+
+main = rule {
+  all_have_name_tag and all_have_allowed_type and not_read_only_friday
+}
